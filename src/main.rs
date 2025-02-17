@@ -1,5 +1,4 @@
 use serde_json;
-use std::env;
 
 // Available if you need it!
 // use serde_bencode
@@ -9,66 +8,74 @@ fn decode_bencoded_value(encoded: &str) -> (serde_json::Value, usize) {
     let first_char = encoded.chars().next().unwrap();
 
     if first_char.is_ascii_digit() {
-        // 1. Parse string: "<length>:<contents>"
-        // Find colon:
+        // (1) Parse string: "<length>:<contents>"
         let colon_index = encoded.find(':').unwrap();
         let length_str = &encoded[..colon_index];
         let length: usize = length_str.parse().unwrap();
-        
-        // The bencoded string is colon_index+1 + length
-        // e.g. "4:pear" has 1+4=5 bytes after the colon
+
         let start_of_str = colon_index + 1;
-        let end_of_str   = start_of_str + length; 
-        let actual_str = &encoded[start_of_str..end_of_str];
-        
-        // We consumed colon_index+1+length total characters
-        let consumed = end_of_str;
-        
-        // Return the JSON string and how many bytes from the bencoded input we consumed
-        (
-            serde_json::Value::String(actual_str.to_owned()),
-            consumed
-        )
-    }
-    else if first_char == 'i' {
-        // 2. Parse integer: "i<digits>e"
-        // Find the terminating 'e'
+        let end_of_str   = start_of_str + length;
+        let actual_str   = &encoded[start_of_str..end_of_str];
+
+        let consumed = end_of_str; // how many chars were consumed from `encoded`
+
+        (serde_json::Value::String(actual_str.to_owned()), consumed)
+    } else if first_char == 'i' {
+        // (2) Parse integer: "i<digits>e"
         let end_index = encoded.find('e').unwrap();
-        // number is between 'i' and 'e'
         let number_str = &encoded[1..end_index];
         let number: i64 = number_str.parse().unwrap();
-        
-        // We consumed from index 0 to end_index (inclusive) => end_index + 1
+
+        // We consumed from index 0 to `end_index` inclusive => end_index + 1
         let consumed = end_index + 1;
-        
-        (
-            serde_json::Value::Number(number.into()),
-            consumed
-        )
-    }
-    else if first_char == 'l' {
-        // 3. Parse list: "l<items>e"
+
+        (serde_json::Value::Number(number.into()), consumed)
+    } else if first_char == 'l' {
+        // (3) Parse list: "l<items>e"
         let mut list = Vec::new();
-        
-        // We start after 'l', so we've consumed 1 char so far
+        // Start after 'l'
         let mut index = 1;
-        
-        // While we haven't hit 'e' (the end of the list):
+
+        // Decode elements until we hit 'e'
         while encoded.chars().nth(index).unwrap() != 'e' {
             let (value, used) = decode_bencoded_value(&encoded[index..]);
             list.push(value);
-            
-            // Advance by the amount used in the substring
-            index += used;
+            index += used; // advance by how many chars were used
         }
-        
-        // Skip the 'e' that ends the list
+
+        // Skip the 'e' at the end
         index += 1;
-        
         (serde_json::Value::Array(list), index)
-    }
-    else {
-        panic!("Unhandled or invalid bencoded value: {encoded}")
+    } else if first_char == 'd' {
+        // (4) Parse dictionary: "d<key><value><key><value>...e"
+        let mut map = serde_json::Map::new();
+        // Start after 'd'
+        let mut index = 1;
+
+        // Decode pairs until we see 'e'
+        while encoded.chars().nth(index).unwrap() != 'e' {
+            // Decode key
+            let (key_val, used_key) = decode_bencoded_value(&encoded[index..]);
+            index += used_key;
+
+            // Decode value
+            let (val_val, used_val) = decode_bencoded_value(&encoded[index..]);
+            index += used_val;
+
+            // Dictionary keys in Bencode are always strings. Enforce that here:
+            let key_str = key_val.as_str()
+                .expect("Bencode dictionary key wasn't a string!")
+                .to_owned();
+
+            map.insert(key_str, val_val);
+        }
+
+        // Skip the 'e' that ends the dictionary
+        index += 1;
+
+        (serde_json::Value::Object(map), index)
+    } else {
+        panic!("Unhandled or invalid bencoded value: {}", encoded);
     }
 }
 
