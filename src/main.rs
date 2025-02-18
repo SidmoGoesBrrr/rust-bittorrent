@@ -1,7 +1,7 @@
-use serde::Deserialize;
-use serde_bencode::de;
+use serde::{Deserialize, Serialize};
+use serde_bencode::{de, ser};
 use serde_json;
-use std::collections::BTreeMap;
+use sha1::{Digest, Sha1};
 use std::fs::File;
 use std::io::{Read, Result};
 
@@ -13,7 +13,7 @@ struct Torrent {
 }
 
 /// Structure for the "info" dictionary
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct Info {
     length: u64,
     name: String,
@@ -21,6 +21,25 @@ struct Info {
     piece_length: u64,
     #[serde(with = "serde_bytes")]
     pieces: Vec<u8>, // Treat as raw bytes
+}
+
+fn calculate_info_hash(info: &Info) -> String {
+    // Bencode the info dictionary back into bytes
+    let bencoded_info = match ser::to_bytes(info) {
+        Ok(data) => data,
+        Err(e) => {
+            eprintln!("Failed to Bencode 'info' dictionary: {:?}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // Compute SHA-1 hash
+    let mut hasher = Sha1::new();
+    hasher.update(bencoded_info);
+    let result = hasher.finalize();
+
+    // Convert hash to hex string
+    result.iter().map(|byte| format!("{:02x}", byte)).collect()
 }
 
 // A helper to safely fetch a char from a &str
@@ -125,7 +144,6 @@ fn decode_bencoded_value(encoded: &str) -> (serde_json::Value, usize) {
 fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
     let command = &args[1];
-    let file_path: &String = &args[2];
 
     if command == "decode" {
         let encoded_value = &args[2];
@@ -145,10 +163,13 @@ fn main() -> Result<()> {
                 std::process::exit(1);
             }
         };
-
+        let info_hash = calculate_info_hash(&torrent.info);
         // Print required information
         println!("Tracker URL: {}", torrent.announce);
         println!("Length: {}", torrent.info.length);
+        println!("Info Hash: {}", info_hash);
+        
+        
     } else {
         eprintln!("Unknown command: {}", command);
         std::process::exit(1);
