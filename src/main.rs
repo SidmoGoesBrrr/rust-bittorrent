@@ -59,6 +59,26 @@ To handle this correctly, consider a byte-based parser.\n",
     })
 }
 
+/// Function to extract and format SHA-1 piece hashes
+fn extract_piece_hashes(pieces: &[u8]) -> Vec<String> {
+    const SHA1_HASH_SIZE: usize = 20;
+    let mut hashes = Vec::new();
+
+    // Ensure pieces are properly sized
+    if pieces.len() % SHA1_HASH_SIZE != 0 {
+        eprintln!("Invalid pieces length: not a multiple of 20 bytes");
+        std::process::exit(1);
+    }
+
+    for chunk in pieces.chunks(SHA1_HASH_SIZE) {
+        let hash_hex: String = chunk.iter().map(|byte| format!("{:02x}", byte)).collect();
+        hashes.push(hash_hex);
+    }
+
+    hashes
+}
+
+
 #[allow(dead_code)]
 fn decode_bencoded_value(encoded: &str) -> (serde_json::Value, usize) {
     // Safely grab the first char
@@ -164,11 +184,18 @@ fn main() -> Result<()> {
             }
         };
         let info_hash = calculate_info_hash(&torrent.info);
+        let piece_hashes = extract_piece_hashes(&torrent.info.pieces);
+
+        let _pieces_hash: Vec<String> = Vec::new();
         // Print required information
         println!("Tracker URL: {}", torrent.announce);
         println!("Length: {}", torrent.info.length);
         println!("Info Hash: {}", info_hash);
-        
+        println!("Piece Length: {}", torrent.info.piece_length);
+        println!("Piece Hashes:");
+        for hash in piece_hashes {
+            println!("{}", hash);
+        }
         
     } else {
         eprintln!("Unknown command: {}", command);
